@@ -6,26 +6,26 @@
 = |_.__/  \__,_||_||_| \___| \__||_||_| |_| =
 ==============================================
 
-Announcements:
+Logs:
+___________________
+2024.10.6
 
-v0.4.0
-- test server is up! `ssh -p 2224 shhhbb.com`
-  - api comments: https://github.com/donuts-are-good/shhhbb/issues/8
-- added API auth tokens
-  - tokens List
-  - tokens new
-  - tokens revoke 
-- added api 
-  - api has chat
-  - api has board discussions 
+Tofu says:
+...
+大家好！
+CyberiaZ上线了，今儿个真高兴！
 
-v0.3.1
-- check it out we have MOTD's now :D 
-- added /q, /quit, /x, /exit
-- added /?
-- added filtering for / commands in chat 
-- added /motd, /bulletin
-- fixed chat scrolling disrupting input
-- added /history to reload the last 100 chat lines 
+这里就简单讲讲 CyberiaZ 。
 
+CyberiaZ 是一个基于shhhbb的SSH_BBS。
+叫这个名字是因为这个BBS相当复古，是属于知客的Cyberia（世界上第一个网吧）。
 
+我用SSH而不用网页作为载体主要是因为我的小派板实在是支持不了网页的算力开销。
+本来要用telnet，但是后来发现SSH可以作为完美的更安全的代替品。恰好我不熟悉telnet但是熟悉SSH。
+
+其实最重要的原因还是怀念千禧年的互联网。
+...说的我想来杯老式了
+
+玩得开心！
+...
+__________________

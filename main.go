@@ -116,24 +116,24 @@ func main() {
 func handleConnection(db *sqlx.DB, channel ssh.Channel, sshConn *ssh.ServerConn, requests <-chan *ssh.Request) {
 	defer channel.Close()
 	if sshConn.Permissions == nil || sshConn.Permissions.Extensions == nil {
-		fmt.Fprintln(channel, "Unable to retrieve your public key.")
+		fmt.Fprintln(channel, "获取公钥失败！")
 		return
 	}
 	pubkey, ok := sshConn.Permissions.Extensions["pubkey"]
 	if !ok {
-		fmt.Fprintln(channel, "Unable to retrieve your public key.")
+		fmt.Fprintln(channel, "获取公钥失败！")
 		return
 	}
 	hash := formatUsernameFromPubkey(pubkey)
 
 	// if _, ok := whitelist[hash]; !ok {
-	// 	fmt.Fprintln(channel, "You are not authorized to connect to this server.")
+	// 	fmt.Fprintln(channel, "公钥在白名单中。欢迎回家！")
 	// 	disconnect(hash)
 	// 	return
 	// }
 
 	// if _, ok := blacklist[hash]; ok {
-	// 	fmt.Fprintln(channel, "You have been banned from this server.")
+	// 	fmt.Fprintln(channel, "您被移出了服务器")
 	// 	disconnect(hash)
 	// 	return
 	// }
@@ -149,9 +149,10 @@ func handleConnection(db *sqlx.DB, channel ssh.Channel, sshConn *ssh.ServerConn,
 	welcome := welcomeMessageAscii()
 
 	term.Write([]byte(welcome))
-	printMOTD(loadMOTD(motdFilePath), term)
+	// 我不太喜欢进去就吐一堆MOTD
+	// printMOTD(loadMOTD(motdFilePath), term)
 	printCachedMessages(term)
-	term.Write([]byte("\nWelcome :) You are " + hash + "\n"))
+	term.Write([]byte("\n欢迎 :) 你是 " + hash + "\n"))
 	for {
 		input, err := term.ReadLine()
 		if err != nil {
@@ -175,7 +176,7 @@ func handleConnection(db *sqlx.DB, channel ssh.Channel, sshConn *ssh.ServerConn,
 		case strings.HasPrefix(input, "/users"):
 			writeUsersOnline(term)
 		case strings.HasPrefix(input, "/bulletin") || strings.HasPrefix(input, "/motd"):
-			printMOTD(motdFilePath, term)
+			printMOTD(loadMOTD(motdFilePath), term)
 		case strings.HasPrefix(input, "/pubkey"):
 			term.Write([]byte("Your pubkey hash: " + hash + "\n"))
 		case strings.HasPrefix(input, "/message"):
@@ -199,14 +200,17 @@ func handleConnection(db *sqlx.DB, channel ssh.Channel, sshConn *ssh.ServerConn,
 		case strings.HasPrefix(input, "/replies"):
 			handleReplies(input, term, db)
 		case strings.HasPrefix(input, "/reply"):
-			handleReply(input, term, db, hash)
+			err := handleReply(input, term, db, hash)
+			if err != nil {
+				term.Write([]byte(err.Error() + "\n"))
+			}
 		default:
 			if len(input) > 0 {
 				if strings.HasPrefix(input, "/") {
-					term.Write([]byte("Unrecognized command. Type /help for available commands.\n"))
+					term.Write([]byte("未知的命令。输入 /help 查看可用指令\n"))
 				} else {
 					message := fmt.Sprintf("[%s] %s: %s", time.Now().String()[11:16], hash, input)
-					broadcast(hash, message+"\r")
+					broadcast(hash, message)
 				}
 			}
 		}
@@ -276,9 +280,9 @@ func disconnect(hash string) {
 func broadcast(senderHash, message string) {
 	addToCache(message)
 	for _, user := range getAllUsers() {
-		if user.Hash == senderHash {
-			continue
-		}
+//		if user.Hash == senderHash {
+//			continue
+//		}
 		saveCursorPos(user.Conn)
 		moveCursorUp(user.Conn, 1)
 		fmt.Fprintln(user.Conn, message)
@@ -290,6 +294,19 @@ func broadcast(senderHash, message string) {
 			continue
 		}
 		log.Printf("Broadcasted message to user with hash %v\n", user.Hash)
+	}
+}
+
+func isPostNumberExist(db *sqlx.DB, postNum int) (bool, error) {
+	var count int
+	err := db.Get(&count, "SELECT COUNT(*) FROM discussions WHERE id = ?", postNum)
+	if err != nil {
+		return false, err
+	}
+	if count <= 0 {
+		return false, nil
+	} else {
+		return true, nil
 	}
 }
 
@@ -332,7 +349,7 @@ func listDiscussions(db *sqlx.DB, term *term.Terminal) {
 	`)
 	if err != nil {
 		log.Printf("Error retrieving discussions: %v", err)
-		term.Write([]byte("Error retrieving discussions.\n"))
+		term.Write([]byte("获取讨论板失败。\n"))
 		return
 	}
 
@@ -346,7 +363,7 @@ func listDiscussions(db *sqlx.DB, term *term.Terminal) {
 		return scoreI > scoreJ
 	})
 
-	term.Write([]byte("Discussions:\n\n[id.]\t[💬replies]\t[topic]\n\n"))
+	term.Write([]byte("讨论板:\n\n[序号.]\t[💬回复数]\t[主题]\n\n"))
 	for _, disc := range discussions {
 		term.Write([]byte(fmt.Sprintf("%d.\t💬%d\t[%s] %s\n", disc.ID, disc.ReplyCount, disc.Author, disc.Message)))
 	}
@@ -357,16 +374,16 @@ func listReplies(db *sqlx.DB, postNumber int, term *term.Terminal) {
 	err := db.Get(&disc, "SELECT id, author, message FROM discussions WHERE id = ?", postNumber)
 	if err != nil {
 		log.Printf("Error retrieving discussion: %v", err)
-		term.Write([]byte("Invalid post number.\n"))
+		term.Write([]byte("错误的讨论序号\n"))
 		return
 	}
-	term.Write([]byte(fmt.Sprintf("Replies to post %d [%s]:\n", disc.ID, disc.Author)))
+	term.Write([]byte(fmt.Sprintf("讨论 %d [%s] 的回复:\n", disc.ID, disc.Author)))
 
 	var replies []*reply
 	err = db.Select(&replies, "SELECT author, message FROM replies WHERE discussion_id = ?", postNumber)
 	if err != nil {
 		log.Printf("Error retrieving replies: %v", err)
-		term.Write([]byte("Error retrieving replies.\n"))
+		term.Write([]byte("获取回复失败。\n"))
 		return
 	}
 	for i, rep := range replies {
@@ -508,12 +525,21 @@ func handleReply(input string, term *term.Terminal, db *sqlx.DB, hash string) er
 	if err != nil {
 		return fmt.Errorf("invalid post number. Usage: /reply <post number> <reply body>")
 	}
+	exists, err := isPostNumberExist(db, postNum)
+	if err != nil {
+		return fmt.Errorf("failed to check post number: %v", err)
+	}
+    // log.Println(exists)
+	if !exists {
+	//	log.Println("not exists")
+		return fmt.Errorf("invalid post number. Post number %d does not exist. Usage: /reply <post number> <reply body>", postNum)
+	}
 	replyBody := parts[2]
 	replySuccess := addReply(db, postNum, hash, replyBody)
 	if !replySuccess {
 		return fmt.Errorf("failed to reply to post. Please check the post number and try again")
 	} else {
-		term.Write([]byte("Reply successfully added to post.\n"))
+		term.Write([]byte("您的回复已成功发布。\n"))
 		return nil
 	}
 }
@@ -521,12 +547,12 @@ func handleReply(input string, term *term.Terminal, db *sqlx.DB, hash string) er
 func handleReplies(input string, term *term.Terminal, db *sqlx.DB) {
 	parts := strings.SplitN(input, " ", 2)
 	if len(parts) < 2 {
-		term.Write([]byte("Usage: /replies <post number>\n"))
+		term.Write([]byte("用法: /replies <post number>\n"))
 		return
 	}
 	postNum, err := strconv.Atoi(parts[1])
 	if err != nil {
-		term.Write([]byte("Invalid post number. Usage: /replies <post number>\n"))
+		term.Write([]byte("错误的帖子序号. 用法: /replies <post number>\n"))
 		return
 	}
 	listReplies(db, postNum, term)
@@ -535,7 +561,7 @@ func handleReplies(input string, term *term.Terminal, db *sqlx.DB) {
 func handleIgnore(input string, term *term.Terminal, hash string) {
 	parts := strings.Split(input, " ")
 	if len(parts) != 2 {
-		term.Write([]byte("Usage: /ignore <user hash>\n"))
+		term.Write([]byte("用法: /ignore <user hash>\n"))
 		return
 	}
 	ignoredUser := parts[1]
@@ -543,17 +569,17 @@ func handleIgnore(input string, term *term.Terminal, hash string) {
 	_, exists := users[ignoredUser]
 	usersMutex.Unlock()
 	if !exists {
-		term.Write([]byte("User " + ignoredUser + " not found.\n"))
+		term.Write([]byte("未找到用户 " + ignoredUser + " 。\n"))
 	} else if ignoredUser == hash {
-		term.Write([]byte("You cannot ignore yourself.\n"))
+		term.Write([]byte("你不能忽略自己。\n"))
 	} else {
 		users[hash].Ignored[ignoredUser] = true
-		term.Write([]byte("User " + ignoredUser + " is now ignored.\n"))
+		term.Write([]byte("成功忽略用户 " + ignoredUser + " 。\n"))
 	}
 }
 
 func readlineErrCheck(term *term.Terminal, err error, hash string) {
-	term.Write([]byte("Error reading input: "))
+	term.Write([]byte("读取输入失败: "))
 	term.Write([]byte(err.Error()))
 	term.Write([]byte("\n"))
 	disconnect(hash)
@@ -562,17 +588,17 @@ func readlineErrCheck(term *term.Terminal, err error, hash string) {
 func handlePost(input string, term *term.Terminal, db *sqlx.DB, hash string) {
 	parts := strings.SplitN(input, " ", 2)
 	if len(parts) < 2 {
-		term.Write([]byte("Usage: /post <message>\n"))
+		term.Write([]byte("用法: /post <message>\n"))
 	} else {
 		postNumber := addDiscussion(db, hash, parts[1])
-		term.Write([]byte(fmt.Sprintf("Posted new discussion with post number %d.\n", postNumber)))
+		term.Write([]byte(fmt.Sprintf("成功投递讨论，序号为：%d。\n", postNumber)))
 	}
 }
 
 func handleMessage(input string, term *term.Terminal, hash string) {
 	parts := strings.Split(input, " ")
 	if len(parts) < 3 {
-		term.Write([]byte("Usage: /message <user hash> <direct message text>\n"))
+		term.Write([]byte("用法: /message <user hash> <direct message text>\n"))
 	} else {
 		recipientHash := parts[1]
 		message := strings.Join(parts[2:], " ")
@@ -583,7 +609,7 @@ func handleMessage(input string, term *term.Terminal, hash string) {
 func formatUsernameFromPubkey(pubkey string) string {
 	hash, err := cleanString(generateHash(pubkey))
 	if err != nil {
-		log.Println("error generating username: ", err)
+		log.Println("生成用户名错误: ", err)
 	}
 	hash = "@" + hash
 	return hash
@@ -592,66 +618,87 @@ func formatUsernameFromPubkey(pubkey string) string {
 func welcomeMessageAscii() string {
 	welcome := `
 
-           BB           BB           BB           BB           BB           
-,adPPYba,  BB,dPPYba,   BB,dPPYba,   BB,dPPYba,   BB,dPPYba,   BB,dPPYba,   
-I8[    ""  BBP'    "8a  BBP'    "8a  BBP'    "8a  BBP'    "8a  BBP'    "8a  
-'"Y8ba,    BB       BB  BB       BB  BB       BB  BB       d8  BB       d8  
-aa    ]8I  BB       BB  BB       BB  BB       BB  BBb,   ,a8"  BBb,   ,a8"  
-'"YbbdP"'  BB       BB  BB       BB  BB       BB  8Y"Ybbd8"'   8Y"Ybbd8"'   BBS
+ ____________________
+|ZZZZZZZZZZZZZZZZZZZZ|
+────────────────/ZZZ/
+・・・・・・・・/ZZZ/・・
+・・・・・・・/ZZZ/・・・
+・・・・・・/ZZZ/・・・・
+・・・・・/ZZZ/・・・・・
+・・・・/ZZZ/・・・・・・
+・・・/ZZZ/・・・・・・・
+・・/ZZZ/・・・・・・・・
+・/ZZZ/・・・・・・・・・
+|ZZZ/________________
+|ZZZZZZZZZZZZZZZZZZZZ|
+ ────────────────────
+
+
+}
 > MIT 2023, https://github.com/donuts-are-good/shhhbb ` + semverInfo + `   
 
- [RULES]                         [GOALS]
-  - your words are your own       - a space for hackers & devs
-  - your eyes are your own        - make cool things
-  - no chat logs are kept         - collaborate & share
-  - have fun :)                   - evolve
+> Hello Navi, we are here again.
 
-Say hello and press [enter] to chat
-Type /help for more commands.
+ [规 则]                         [目 标]
+  - 畅所欲言                       - 为Zekkers搭建一个复古平台
+  - 分享知识                       - 搞点有意思的事儿
+  - 别做坏事                       - 学习共进
+  - 享受乐趣! :)                   - 逃离这样的互联网
+
+输入hello，按下回车，开始聊天！
+输入 /help 获取完整的命令提示。
 
 `
 	return welcome
 }
 
 func writeUsersOnline(term *term.Terminal) {
-	term.Write([]byte("Connected users:\n"))
+	term.Write([]byte("已连接的用户:\n"))
 	for _, user := range users {
 		term.Write([]byte("- " + user.Hash + "\n"))
 	}
 }
+func writegithub(term *term.Terminal) {
+	term.Write([]byte(`
+CyberiaZ是shhhbb的一个folk，使用了GO语言。
+因为是开源的，你也可以通过git为CyberiaZ添加自己喜欢的功能。
+
+
+` + "\n"))
+}
 func writeHelpMenu(term *term.Terminal) {
 	term.Write([]byte(`
-[General Commands]
+[一般 | General Commands]
 	/help		
-		- show this help message
+		- 显示这个帮助 | show this help message
 	/pubkey		
-		- show your pubkey hash, which is also your username
+		- 显示您的公钥（同时也是用户名） | show your pubkey hash, which is also your username
 	/users		
-		- list all online users
+		- 列出所有在线用户 | list all online users
 	/message <user hash> <body> 
-		- ex: /message @A1Gla593 hey there friend
-		- send a direct message to a user
+		- 使用例: /message @A1Gla593 你好呀 | ex: /message @A1Gla593 hey there friend
+		- 发送私密消息给指定用户
 	/quit, /q, /exit, /x
-		- disconnect, exit, goodbye
+		- 退出服务器。拜拜！ | disconnect, exit, goodbye
 
-[Chat commands]
+[聊天 | Chat commands]
 	/history
-		- reloads the last 100 lines of chat history
+		- 显示过去100条聊天历史 | reloads the last 100 lines of chat history
 
-[Message Board]
+[公告板 | Message Board]
 	/post <message>
-		- ex: /post this is my cool title
-		- posts a new discussion topic 
+		- 使用例: /post 超酷的标题 | ex: /post this is my cool title
+		- 创建一个新讨论 | posts a new discussion topic 
 	/list
-		- list all discussions 
+		- 列出所有讨论 | list all discussions 
 	/replies <post number>
-		- ex: /replies 1
-		- list all replies to a discussion
+		- 使用例: /replies 1 | ex: /replies 1
+		- 列出某个讨论的所有回复 | list all replies to a discussion
 	/reply <post number> <reply body>
 		- ex: /reply 1 hello everyone
 		- reply to a discussion
 
-[API Commands]
+[API(暂时未知如何使用) | API Commands]
 	/tokens new
 		- create a new shhhbb API token 
 	/tokens list
@@ -659,7 +706,7 @@ func writeHelpMenu(term *term.Terminal) {
 	/tokens revoke <token>
 		- revoke an shhhbb API token
 
-[Misc. Commands]
+[杂项 | Misc. Commands]
 	/license
 		- display the license text for shhhbb 
 	/version
@@ -690,7 +737,8 @@ SOFTWARE.
 }
 func writeVersionInfo(term *term.Terminal) {
 	term.Write([]byte(`
-shhhbb bbs ` + semverInfo + `
+CyberiaZ bbs v1.0 (2024.10.7)
+s基于hhhbb bbs ` + semverInfo + `
 MIT License 2023 donuts-are-good
 https://github.com/donuts-are-good/shhhbb
 `))
