@@ -167,25 +167,25 @@ func handleConnection(db *sqlx.DB, channel ssh.Channel, sshConn *ssh.ServerConn,
 		switch {
 		case strings.HasPrefix(input, "/ignore"):
 			handleIgnore(input, term, hash)
-		case strings.HasPrefix(input, "/help") || strings.HasPrefix(input, "/?"):
+		case strings.HasPrefix(input, "/help") || strings.HasPrefix(input, "/h"):
 			writeHelpMenu(term)
 		case strings.HasPrefix(input, "/license"):
 			writeLicenseProse(term)
 		case strings.HasPrefix(input, "/version"):
 			writeVersionInfo(term)
-		case strings.HasPrefix(input, "/users"):
+		case strings.HasPrefix(input, "/users") || strings.HasPrefix(input, "/u"):
 			writeUsersOnline(term)
-		case strings.HasPrefix(input, "/bulletin") || strings.HasPrefix(input, "/motd"):
+		case strings.HasPrefix(input, "/bulletiners") || strings.HasPrefix(input, "/motd"):
 			printMOTD(loadMOTD(motdFilePath), term)
 		case strings.HasPrefix(input, "/pubkey"):
 			term.Write([]byte("Your pubkey hash: " + hash + "\n"))
-		case strings.HasPrefix(input, "/message"):
+		case strings.HasPrefix(input, "/message") || strings.HasPrefix(input, "/say"):
 			handleMessage(input, term, hash)
-		case strings.HasPrefix(input, "/post"):
+		case strings.HasPrefix(input, "/post") || strings.HasPrefix(input, "/p"):
 			handlePost(input, term, db, hash)
-		case strings.HasPrefix(input, "/list"):
+		case strings.HasPrefix(input, "/list") || strings.HasPrefix(input, "/l"):
 			listDiscussions(db, term)
-		case strings.HasPrefix(input, "/history"):
+		case strings.HasPrefix(input, "/history") || strings.HasPrefix(input, "/his"):
 			printCachedMessages(term)
 		case strings.HasPrefix(input, "/tokens new"):
 			handleTokenNew(db, term, hash)
@@ -197,13 +197,15 @@ func handleConnection(db *sqlx.DB, channel ssh.Channel, sshConn *ssh.ServerConn,
 			strings.HasPrefix(input, "/exit") || strings.HasPrefix(input, "/x") ||
 			strings.HasPrefix(input, "/leave") || strings.HasPrefix(input, "/part"):
 			disconnect(hash)
-		case strings.HasPrefix(input, "/replies"):
+		case strings.HasPrefix(input, "/replies") || strings.HasPrefix(input, "/rs"):
 			handleReplies(input, term, db)
-		case strings.HasPrefix(input, "/reply"):
+		case strings.HasPrefix(input, "/reply") || strings.HasPrefix(input, "/r"):
 			err := handleReply(input, term, db, hash)
 			if err != nil {
 				term.Write([]byte(err.Error() + "\n"))
 			}
+		case strings.HasPrefix(input, "/build"):
+			writegithub(term)
 		default:
 			if len(input) > 0 {
 				if strings.HasPrefix(input, "/") {
@@ -643,7 +645,7 @@ func welcomeMessageAscii() string {
   - 畅所欲言                       - 为Zekkers搭建一个复古平台
   - 分享知识                       - 搞点有意思的事儿
   - 别做坏事                       - 学习共进
-  - 享受乐趣! :)                   - 逃离这样的互联网
+  - 享受乐趣! :)                   - 逃离现代互联网
 
 输入hello，按下回车，开始聊天！
 输入 /help 获取完整的命令提示。
@@ -663,38 +665,39 @@ func writegithub(term *term.Terminal) {
 CyberiaZ是shhhbb的一个folk，使用了GO语言。
 因为是开源的，你也可以通过git为CyberiaZ添加自己喜欢的功能。
 
-
+CyberiaZ项目主页: 
+https://github.com/Tofu707/CyberiaZ
 ` + "\n"))
 }
 func writeHelpMenu(term *term.Terminal) {
 	term.Write([]byte(`
 [一般 | General Commands]
-	/help		
+	/help, /h		
 		- 显示这个帮助 | show this help message
-	/pubkey		
+	/pubkey, /pub		
 		- 显示您的公钥（同时也是用户名） | show your pubkey hash, which is also your username
-	/users		
+	/users, /u		
 		- 列出所有在线用户 | list all online users
-	/message <user hash> <body> 
+	/message(/say) <user hash> <body> 
 		- 使用例: /message @A1Gla593 你好呀 | ex: /message @A1Gla593 hey there friend
 		- 发送私密消息给指定用户
 	/quit, /q, /exit, /x
 		- 退出服务器。拜拜！ | disconnect, exit, goodbye
 
 [聊天 | Chat commands]
-	/history
+	/history, /his
 		- 显示过去100条聊天历史 | reloads the last 100 lines of chat history
 
 [公告板 | Message Board]
-	/post <message>
+	/post(/p) <message>
 		- 使用例: /post 超酷的标题 | ex: /post this is my cool title
 		- 创建一个新讨论 | posts a new discussion topic 
-	/list
+	/list, /l
 		- 列出所有讨论 | list all discussions 
-	/replies <post number>
+	/replies(/rs) <post number>
 		- 使用例: /replies 1 | ex: /replies 1
 		- 列出某个讨论的所有回复 | list all replies to a discussion
-	/reply <post number> <reply body>
+	/reply(/r) <post number> <reply body>
 		- ex: /reply 1 hello everyone
 		- reply to a discussion
 
@@ -711,6 +714,8 @@ func writeHelpMenu(term *term.Terminal) {
 		- display the license text for shhhbb 
 	/version
 		- display the shhhbb version information	
+	/build
+		- 显示这个项目的github。欢迎您的贡献！
 	
 ` + "\n"))
 }
